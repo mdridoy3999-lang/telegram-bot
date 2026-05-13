@@ -4,18 +4,24 @@ import random
 
 TOKEN = "8409479235:AAGBBODhZBQyKf76-zKevURrxHzYM4nINOA"
 
-signals = [
-    "📈 BUY BTCUSDT\nTP: 65000\nSL: 62000",
-    "📉 SELL ETHUSDT\nTP: 2800\nSL: 3000",
-    "📈 BUY GOLD\nTP: 2400\nSL: 2350"
-]
+pairs = ["EUR/USD", "USD/JPY", "GBP/USD", "BTC/USD"]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 Trading Signal Bot Online")
+    await update.message.reply_text("📊 Quotex Signal Bot Online")
 
 async def signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    trade = random.choice(signals)
-    await update.message.reply_text(trade)
+    pair = random.choice(pairs)
+    direction = random.choice(["📈 UP", "📉 DOWN"])
+    time = random.choice(["1 MIN", "5 MIN"])
+
+    msg = f"""
+🔥 Quotex Signal
+
+Pair: {pair}
+Signal: {direction}
+Time: {time}
+"""
+    await update.message.reply_text(msg)
 
 app = ApplicationBuilder().token(TOKEN).build()
 
