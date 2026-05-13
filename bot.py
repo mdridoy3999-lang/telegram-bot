@@ -8,7 +8,10 @@ pairs = [
     "BTC/USD",
     "EUR/USD",
     "GBP/USD",
-    "USD/JPY"
+    "USD/JPY",
+    "USD/BDT",
+    "USD/BRL"
+    
 ]
 
 directions = [
