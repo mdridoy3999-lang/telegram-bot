@@ -5,20 +5,20 @@ import random
 TOKEN = "8409479235:AAGBBODhZBQyKf76-zKevURrxHzYM4nINOA"
 
 pairs = [
-    "BTC/USD",
+    "USD/NGN",
     "EUR/USD",
     "GBP/USD",
     "USD/JPY",
     "USD/BDT",
     "USD/BRL",
     "NZD/CAD",
-    "CAD/CHF"
-    
+    "CAD/CHF",
+    "USD/PKR"
 ]
 
 directions = [
     "⬆️ UP",
-    "⬇️ DOWN"
+    "🔽 DOWN"
 ]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
