@@ -10,13 +10,15 @@ pairs = [
     "GBP/USD",
     "USD/JPY",
     "USD/BDT",
-    "USD/BRL"
+    "USD/BRL",
+    "NZD/CAD",
+    "CAD/CHF"
     
 ]
 
 directions = [
-    "📈 UP",
-    "📉 DOWN"
+    "⬆️ UP",
+    "⬇️ DOWN"
 ]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
