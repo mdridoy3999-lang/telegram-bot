@@ -17,14 +17,7 @@ pairs = [
     "AUD/USD",
     "NZD/USD",
     "EUR/JPY",
-    "GBP/JPY",
-    "EUR/USD OTC",
-    "GBP/USD OTC",
-    "USD/JPY OTC",
-    "AUD/USD OTC",
-    "USD/BTD OTC",
-    "USD/BRL OTC",
-    "USD/PKR OTC"
+    "GBP/JPY"
 ]
 
 directions = [
