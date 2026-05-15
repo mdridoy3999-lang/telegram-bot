@@ -22,6 +22,9 @@ pairs = [
     "GBP/USD OTC",
     "USD/JPY OTC",
     "AUD/USD OTC",
+    "USD/BTD OTC",
+    "USD/BRL OTC",
+    "USD/PKR OTC"
 ]
 
 directions = [
