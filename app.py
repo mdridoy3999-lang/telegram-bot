@@ -272,11 +272,11 @@ body{ background:#020617; color:white; max-width:500px; margin:auto; padding-bot
 <div class="signalBox signal-neutral" id="displayArea">
 <div id="mainContent" style="width: 100%;">
 <div id="targetAsset" style="font-size: 16px; color: #00ffcc; font-weight: 900; margin-bottom: 5px;">USD/BRL</div>
-<div id="icon">📡</div>
+<div id="icon">🧠</div>
 <div id="signal" style="color:#fff; font-size: 22px;">READY TO MASTER SCAN</div>
 </div>
 </div>
-<button class="scanBtn" onclick="startScan()">🔥 EXECUTE ALGO SCAN</button>
+<button class="scanBtn" onclick="startScan()">🧠 EXECUTE ALGO SCAN</button>
 <div class="control-grid">
     <button class="control-btn" id="autoBtn" onclick="toggleAutoMode()">🔄 AUTO MODE: OFF</button>
     <button class="control-btn" style="background:#dc2626;" onclick="resetStats()">🧹 RESET HISTORY</button>
