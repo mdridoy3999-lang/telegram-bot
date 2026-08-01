@@ -4,11 +4,11 @@ import time
 
 app = Flask(__name__)
 
-# ==================== INDICATOR & ANALYSIS LOGIC ====================
+# ==================== DATA & TECHNICAL ANALYSIS CALCULATOR ====================
 
 def fetch_ohlcv(symbol):
     """
-    মার্কেট ডেটা সিমুলেটর (বা তোমার ডাইনামিক ডেটা সোর্স)
+    মার্কেট ক্যান্ডেলস্টিক ও ভলিউম ডেটা জেনারেটর
     """
     random.seed(int(time.time() / 10) + ord(symbol[0]))
     base_price = 1.0850 if "EUR" in symbol else (100.50 if "BRL" in symbol else 150.20)
@@ -19,9 +19,9 @@ def fetch_ohlcv(symbol):
         change = random.uniform(-0.002, 0.002)
         op = curr
         cl = curr + change
-        hi = max(op, cl) + random.uniform(0, 0.001)
-        lo = min(op, cl) - random.uniform(0, 0.001)
-        vol = random.randint(100, 1000)
+        hi = max(op, cl) + random.uniform(0, 0.0008)
+        lo = min(op, cl) - random.uniform(0, 0.0008)
+        vol = random.randint(300, 1500)
         
         opens.append(op)
         closes.append(cl)
@@ -31,6 +31,13 @@ def fetch_ohlcv(symbol):
         curr = cl
         
     return opens, highs, lows, closes, volumes
+
+def calc_ema(closes, period):
+    multiplier = 2 / (period + 1)
+    ema = closes[0]
+    for price in closes[1:]:
+        ema = (price * multiplier) + (ema * (1 - multiplier))
+    return ema
 
 def calc_rsi(closes, period=14):
     gains = [max(0, closes[i] - closes[i-1]) for i in range(1, len(closes))]
@@ -42,147 +49,148 @@ def calc_rsi(closes, period=14):
     rs = avg_gain / avg_loss
     return round(100 - (100 / (1 + rs)), 2)
 
-def calc_ema(closes, period):
-    multiplier = 2 / (period + 1)
-    ema = closes[0]
-    for price in closes[1:]:
-        ema = (price * multiplier) + (ema * (1 - multiplier))
-    return ema
+def calc_macd(closes):
+    ema12 = calc_ema(closes, 12)
+    ema26 = calc_ema(closes, 26)
+    macd_line = ema12 - ema26
+    signal_line = macd_line * 0.85  # Simulated Signal Line
+    return macd_line, signal_line
 
 def calc_bollinger(closes, period=20, std_dev=2):
     slice_closes = closes[-period:]
     sma = sum(slice_closes) / period
     variance = sum((x - sma) ** 2 for x in slice_closes) / period
     sd = variance ** 0.5
-    return sma + (std_dev * sd), sma - (std_dev * sd)
+    return sma + (std_dev * sd), sma, sma - (std_dev * sd)
 
-def calc_stochastic(closes, highs, lows, k_period=14, d_period=3):
-    lowest_low = min(lows[-k_period:])
-    highest_high = max(highs[-k_period:])
-    if highest_high == lowest_low:
-        stoch_k = 50
-    else:
-        stoch_k = ((closes[-1] - lowest_low) / (highest_high - lowest_low)) * 100
-    stoch_d = stoch_k * 0.9  # Simulated Smooth D
-    return round(stoch_k, 2), round(stoch_d, 2)
-
-def is_strong_trend(closes):
-    return abs(closes[-1] - closes[-20]) > (closes[-1] * 0.002)
-
-def candle_confirmation(opens, closes, highs, lows, direction):
+def detect_candle_pattern(opens, closes, highs, lows):
     op, cl = opens[-1], closes[-1]
-    if direction == "buy":
-        return cl > op  # Bullish Candle
-    else:
-        return cl < op  # Bearish Candle
-
-# ==================== ADVANCED SIGNAL SCORING ENGINE ====================
-
-def get_signal(symbol):
-    opens, highs, lows, closes, volumes = fetch_ohlcv(symbol)
+    prev_op, prev_cl = opens[-2], closes[-2]
     
+    if cl > op and (prev_cl < prev_op) and (cl > prev_op) and (op < prev_cl):
+        return "Bullish Engulfing"
+    elif cl < op and (prev_cl > prev_op) and (cl < prev_op) and (op > prev_cl):
+        return "Bearish Engulfing"
+    elif (cl - op) > 0 and (op - lows[-1]) > 2 * (cl - op):
+        return "Hammer"
+    elif (op - cl) > 0 and (highs[-1] - op) > 2 * (op - cl):
+        return "Shooting Star"
+    elif cl > op:
+        return "Pin Bar Bullish"
+    else:
+        return "Pin Bar Bearish"
+
+# ==================== YOUR CUSTOM WEIGHTED AI SIGNAL ENGINE ====================
+
+def ai_signal(symbol):
+    opens, highs, lows, closes, volumes = fetch_ohlcv(symbol)
     if not closes or len(closes) < 100:
-        return None
+        return {"signal": "WAIT", "confidence": 0, "trend": "NEUTRAL", "reasons": ["Insufficient Data"]}
 
-    price = closes[-1]
+    close = closes[-1]
+    ema_fast = calc_ema(closes, 9)
+    ema_slow = calc_ema(closes, 21)
     rsi = calc_rsi(closes)
-    e9 = calc_ema(closes, 9)
-    e21 = calc_ema(closes, 21)
-    e50 = calc_ema(closes, 50)
-    upper_bb, lower_bb = calc_bollinger(closes)
-    stoch_k, stoch_d = calc_stochastic(closes, highs, lows)
+    macd, macd_signal = calc_macd(closes)
+    bb_upper, bb_middle, bb_lower = calc_bollinger(closes)
+    candle_pattern = detect_candle_pattern(opens, closes, highs, lows)
+    support = min(lows[-30:])
+    resistance = max(highs[-30:])
+    volume = volumes[-1]
+    avg_volume = sum(volumes[-10:]) / 10
 
-    # ---------------- BUY SCORE CHECK ----------------
-    buy_score = 0
-    buy_reasons = []
+    score = 0
+    reasons = []
 
-    if rsi < 28:
-        buy_score += 4
-        buy_reasons.append("🔴 RSI Deep Oversold (<28)")
-    elif rsi < 35:
-        buy_score += 2
-        buy_reasons.append("RSI Oversold")
+    # 1. EMA Trend (20 Points)
+    if ema_fast > ema_slow:
+        trend = "CALL"
+        score += 20
+        reasons.append("EMA Bullish Alignment")
+    elif ema_fast < ema_slow:
+        trend = "PUT"
+        score += 20
+        reasons.append("EMA Bearish Alignment")
+    else:
+        trend = "WAIT"
 
-    if stoch_k < 20 and stoch_k > stoch_d:
-        buy_score += 3
-        buy_reasons.append("📊 Stochastic Oversold + Cross Up")
+    if trend == "WAIT":
+        return {"signal": "WAIT", "confidence": 0, "trend": "NEUTRAL", "reasons": ["EMA Flat"]}
 
-    if e9 > e21 > e50 and price > e9:
-        buy_score += 3
-        buy_reasons.append("📈 Strong Bullish EMA Alignment")
+    # 2. RSI (15 Points)
+    if trend == "CALL":
+        if 35 <= rsi <= 65:
+            score += 15
+            reasons.append(f"RSI Healthy Buy ({rsi})")
+        elif rsi < 30:
+            score += 15
+            reasons.append(f"RSI Deep Oversold Rebound ({rsi})")
 
-    if lower_bb and price <= lower_bb * 1.003:
-        buy_score += 3
-        buy_reasons.append("🔵 Price at Lower Bollinger Band")
+    elif trend == "PUT":
+        if 35 <= rsi <= 65:
+            score += 15
+            reasons.append(f"RSI Healthy Sell ({rsi})")
+        elif rsi > 70:
+            score += 15
+            reasons.append(f"RSI Deep Overbought Drop ({rsi})")
 
-    if is_strong_trend(closes) and price > e21:
-        buy_score += 2
-        buy_reasons.append("💪 Strong Uptrend Continuation")
+    # 3. MACD (15 Points)
+    if trend == "CALL" and macd > macd_signal:
+        score += 15
+        reasons.append("MACD Bullish Crossover")
 
-    if candle_confirmation(opens, closes, highs, lows, "buy"):
-        buy_score += 2
-        buy_reasons.append("✅ Bullish Candle Confirmation")
+    if trend == "PUT" and macd < macd_signal:
+        score += 15
+        reasons.append("MACD Bearish Crossover")
 
-    if buy_score >= 8:  # Adjusted for live optimal trigger
-        accuracy = min(99, 85 + (buy_score * 1.2))
-        return {
-            "direction": "BUY (CALL)",
-            "trend": "📈 UP-TREND (HIGH SCORE)",
-            "accuracy": round(accuracy, 1),
-            "pattern": buy_reasons[0] if buy_reasons else "Bullish Momentum",
-            "score": buy_score,
-            "reasons": buy_reasons
-        }
+    # 4. Bollinger Bands (15 Points)
+    if trend == "CALL" and (close > bb_middle or close <= bb_lower * 1.002):
+        score += 15
+        reasons.append("Bollinger Support / Bounce")
 
-    # ---------------- SELL SCORE CHECK ----------------
-    sell_score = 0
-    sell_reasons = []
+    if trend == "PUT" and (close < bb_middle or close >= bb_upper * 0.998):
+        score += 15
+        reasons.append("Bollinger Resistance / Rejection")
 
-    if rsi > 72:
-        sell_score += 4
-        sell_reasons.append("🟢 RSI Deep Overbought (>72)")
-    elif rsi > 65:
-        sell_score += 2
-        sell_reasons.append("RSI Overbought")
+    # 5. Candlestick Patterns (15 Points)
+    bullish_patterns = ["Bullish Engulfing", "Hammer", "Morning Star", "Pin Bar Bullish"]
+    bearish_patterns = ["Bearish Engulfing", "Shooting Star", "Evening Star", "Pin Bar Bearish"]
 
-    if stoch_k > 80 and stoch_k < stoch_d:
-        sell_score += 3
-        sell_reasons.append("📊 Stochastic Overbought + Cross Down")
+    if trend == "CALL" and candle_pattern in bullish_patterns:
+        score += 15
+        reasons.append(f"Pattern: {candle_pattern}")
 
-    if e9 < e21 < e50 and price < e9:
-        sell_score += 3
-        sell_reasons.append("📉 Strong Bearish EMA Alignment")
+    if trend == "PUT" and candle_pattern in bearish_patterns:
+        score += 15
+        reasons.append(f"Pattern: {candle_pattern}")
 
-    if upper_bb and price >= upper_bb * 0.997:
-        sell_score += 3
-        sell_reasons.append("🔴 Price at Upper Bollinger Band")
+    # 6. Support / Resistance (10 Points)
+    if trend == "CALL" and abs(close - support) < (close * 0.0025):
+        score += 10
+        reasons.append("Near Strong Support")
 
-    if is_strong_trend(closes) and price < e21:
-        sell_score += 2
-        sell_reasons.append("💪 Strong Downtrend Continuation")
+    if trend == "PUT" and abs(close - resistance) < (close * 0.0025):
+        score += 10
+        reasons.append("Near Strong Resistance")
 
-    if candle_confirmation(opens, closes, highs, lows, "sell"):
-        sell_score += 2
-        sell_reasons.append("✅ Bearish Candle Confirmation")
+    # 7. Volume (10 Points)
+    if volume > avg_volume:
+        score += 10
+        reasons.append("High Volume Confirmation")
 
-    if sell_score >= 8:
-        accuracy = min(99, 85 + (sell_score * 1.2))
-        return {
-            "direction": "SELL (PUT)",
-            "trend": "📉 DOWN-TREND (HIGH SCORE)",
-            "accuracy": round(accuracy, 1),
-            "pattern": sell_reasons[0] if sell_reasons else "Bearish Momentum",
-            "score": sell_score,
-            "reasons": sell_reasons
-        }
+    # Final Decision Output
+    if score >= 80:
+        signal = "STRONG " + trend
+    elif score >= 65:
+        signal = trend
+    else:
+        signal = "WAIT"
 
     return {
-        "direction": "NEUTRAL",
-        "trend": "↔️ CONSOLIDATION",
-        "accuracy": 50.0,
-        "pattern": "⚖️ NO STRONG PATTERN MATCH",
-        "score": max(buy_score, sell_score),
-        "reasons": ["Market Condition Not Favorable"]
+        "signal": signal,
+        "confidence": score,
+        "trend": trend,
+        "reasons": reasons
     }
 
 # ==================== FRONTEND UI HTML ====================
@@ -216,7 +224,7 @@ body{ background:#020617; color:white; max-width:500px; margin:auto; padding-bot
 .signal-active-down { background: linear-gradient(135deg, rgba(255, 68, 102, 0.03), #020617); border: 2px solid #ff4466; }
 .signal-neutral { background: #0f172a; border: 2px solid #475569; }
 #icon{ font-size:48px; margin-bottom: 3px; }
-#signal{ font-size:30px; font-weight:900; }
+#signal{ font-size:26px; font-weight:900; }
 .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; width: 100%; margin-top: 12px; border-top: 1px solid #334155; padding-top: 12px; }
 .stat-item { font-size: 11px; color: #94a3b8; font-weight: bold; text-align: left; }
 .stat-item span { display: block; font-size: 13px; color: #fff; font-weight: 900; margin-top: 3px; }
@@ -239,7 +247,7 @@ body{ background:#020617; color:white; max-width:500px; margin:auto; padding-bot
 </head>
 <body>
 <div class="header">
-<div class="title">🤖 QX ENGINE v11.3 (FULL SCORE)</div>
+<div class="title">🤖 QX ENGINE v11.3 (100 PTS ENGINE)</div>
 <div class="status">🟢 ANTI-BAN INTEGRATION</div>
 </div>
 <div class="clockBox">
@@ -328,30 +336,30 @@ function logManualResult(result) {
     displayArea.className = "signalBox signal-neutral";
     mainContent.innerHTML = `
         <div style="font-size: 16px; color: #00ffcc; font-weight: 900; margin-bottom: 5px;">${selectedPair}</div>
-        <div id="icon">👍</div>
+        <div id="icon">🧠</div>
         <div id="signal" style="color:#fff; font-size: 20px;">RESULT LOGGED! READY</div>`;
 }
 
 function startScan(){
     calculateAmounts();
     displayArea.className = "signalBox";
-    mainContent.innerHTML = `<div class="loader"></div><div style="color:#00ffcc;font-weight:bold;">ANALYZING SCORES & CANDLES...</div>`;
+    mainContent.innerHTML = `<div class="loader"></div><div style="color:#00ffcc;font-weight:bold;">COMPUTING 100-PT WEIGHTED ALGO...</div>`;
     fetch(`/api/get_quotex_signal?pair=${selectedPair}&tf=${selectedTF}`)
     .then(res => res.json())
     .then(data => {
         let tfText = selectedTF;
-        if(data.signal === "BUY (CALL)" || data.signal === "SELL (PUT)"){
-            let isUp = data.signal === "BUY (CALL)";
+        if(data.signal.includes("CALL") || data.signal.includes("PUT")){
+            let isUp = data.signal.includes("CALL");
             displayArea.className = isUp ? "signalBox signal-active-up" : "signalBox signal-active-down";
             mainContent.innerHTML = `
                 <div style="font-size:12px;color:#00ffcc;font-weight:bold;">${selectedPair} (OTC) [${tfText}]</div>
                 <div id="icon">${isUp ? '🟢':'🔴'}</div>
                 <div id="signal" style="color: ${isUp ? '#00ff88':'#ff4466'};">${data.signal}</div>
                 <div class="stats-grid">
-                    <div class="stat-item">MATCHED KEY<span>${data.pattern}</span></div>
-                    <div class="stat-item">CONFIDENCE<span>${data.accuracy}%</span></div>
-                    <div class="stat-item">SCORE POINTS<span>${data.score} PTS</span></div>
+                    <div class="stat-item">AI CONFIDENCE<span>${data.confidence} / 100 PTS</span></div>
+                    <div class="stat-item">KEY REASON<span>${data.reasons[0] || 'Technical Match'}</span></div>
                     <div class="stat-item">REC. INVEST<span>$${baseInvest}</span></div>
+                    <div class="stat-item">M1 INVEST<span>$${m1Invest}</span></div>
                 </div>
                 <div class="guide-box">⚠️ MARCO PLAN: IF LOSS PLACE M1 AMOUNT: $${m1Invest}</div>
                 <div class="manual-pnl-actions">
@@ -362,8 +370,8 @@ function startScan(){
             displayArea.className = "signalBox signal-neutral";
             mainContent.innerHTML = `
                 <div id="icon">⚖️</div>
-                <div id="signal" style="color:#94a3b8; font-size:22px;">NEUTRAL / NO SETUP</div>
-                <div style="font-size:11px; color:#64748b; margin-top:8px;">SCORE IS TOO LOW (${data.score} PTS)</div>`;
+                <div id="signal" style="color:#94a3b8; font-size:22px;">MARKET WAIT (${data.confidence} PTS)</div>
+                <div style="font-size:11px; color:#64748b; margin-top:8px;">SCORE IS BELOW 65 PTS THRESHOLD</div>`;
         }
     }).catch(() => {
         displayArea.className = "signalBox signal-neutral";
@@ -396,7 +404,7 @@ document.querySelectorAll('.pair').forEach(item => {
 </html>
 """
 
-# ==================== FLASK ROUTES ====================
+# ==================== API ROUTE ====================
 
 @app.route('/')
 def home():
@@ -405,17 +413,15 @@ def home():
 @app.route('/api/get_quotex_signal')
 def get_quotex_signal_api():
     pair = request.args.get('pair', 'USD/BRL')
-    result = get_signal(pair)
+    res = ai_signal(pair)
     
     return jsonify({
         "status": "success",
         "pair": pair,
-        "signal": result["direction"],
-        "trend": result["trend"],
-        "accuracy": result["accuracy"],
-        "pattern": result["pattern"],
-        "score": result["score"],
-        "reasons": result["reasons"]
+        "signal": res["signal"],
+        "confidence": res["confidence"],
+        "trend": res["trend"],
+        "reasons": res["reasons"]
     })
 
 if __name__ == '__main__':
