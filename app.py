@@ -4,7 +4,7 @@ import time
 
 app = Flask(__name__)
 
-# ==================== DATA & TECHNICAL ANALYSIS CALCULATOR ====================
+# ==================== TECHNICAL INDICATORS CALCULATOR ====================
 
 def fetch_ohlcv(symbol):
     """
@@ -53,7 +53,7 @@ def calc_macd(closes):
     ema12 = calc_ema(closes, 12)
     ema26 = calc_ema(closes, 26)
     macd_line = ema12 - ema26
-    signal_line = macd_line * 0.85  # Simulated Signal Line
+    signal_line = macd_line * 0.85
     return macd_line, signal_line
 
 def calc_bollinger(closes, period=20, std_dev=2):
@@ -80,7 +80,49 @@ def detect_candle_pattern(opens, closes, highs, lows):
     else:
         return "Pin Bar Bearish"
 
-# ==================== YOUR CUSTOM WEIGHTED AI SIGNAL ENGINE ====================
+# ==================== DOW THEORY SWING DETECTION ====================
+
+def find_swing_points(highs, lows, left=2, right=2, window=40):
+    n = len(highs)
+    if n < (left + right + 1):
+        return [], []
+        
+    start = max(left, n - window)
+    swing_highs = []
+    swing_lows = []
+    
+    for i in range(start, n - right):
+        window_highs = highs[i - left : i + right + 1]
+        window_lows = lows[i - left : i + right + 1]
+        
+        current_high = highs[i]
+        current_low = lows[i]
+        
+        if current_high == max(window_highs) and window_highs.count(current_high) == 1:
+            swing_highs.append((i, current_high))
+            
+        if current_low == min(window_lows) and window_lows.count(current_low) == 1:
+            swing_lows.append((i, current_low))
+            
+    return swing_highs, swing_lows
+
+def calc_dow_trend(highs, lows):
+    swing_highs, swing_lows = find_swing_points(highs, lows)
+    
+    if len(swing_highs) < 2 or len(swing_lows) < 2:
+        return "UNCLEAR", ["Dow Theory: Not enough swing structure"]
+
+    h1, h2 = swing_highs[-2][1], swing_highs[-1][1]
+    l1, l2 = swing_lows[-2][1], swing_lows[-1][1]
+
+    if h2 > h1 and l2 > l1:
+        return "UPTREND", ["Dow Theory: Higher-High + Higher-Low structure"]
+    elif h2 < h1 and l2 < l1:
+        return "DOWNTREND", ["Dow Theory: Lower-High + Lower-Low structure"]
+    else:
+        return "UNCLEAR", ["Dow Theory: Mixed/no clear structure"]
+
+# ==================== AI SIGNAL ENGINE WITH PENALTY SYSTEM ====================
 
 def ai_signal(symbol):
     opens, highs, lows, closes, volumes = fetch_ohlcv(symbol)
@@ -102,7 +144,7 @@ def ai_signal(symbol):
     score = 0
     reasons = []
 
-    # 1. EMA Trend (20 Points)
+    # 1. EMA Trend Base (20 Points)
     if ema_fast > ema_slow:
         trend = "CALL"
         score += 20
@@ -115,16 +157,33 @@ def ai_signal(symbol):
         trend = "WAIT"
 
     if trend == "WAIT":
-        return {"signal": "WAIT", "confidence": 0, "trend": "NEUTRAL", "reasons": ["EMA Flat"]}
+        return {"signal": "WAIT", "confidence": 0, "trend": "NEUTRAL", "reasons": ["EMA Flat / Sideways"]}
 
-    # 2. RSI (15 Points)
+    # 2. Dow Theory Swing Structure (10 Points + Penalty)
+    dow_trend, dow_reasons = calc_dow_trend(highs, lows)
+    if trend == "CALL" and dow_trend == "UPTREND":
+        score += 10
+        reasons.extend(dow_reasons)
+    elif trend == "PUT" and dow_trend == "DOWNTREND":
+        score += 10
+        reasons.extend(dow_reasons)
+    elif trend == "CALL" and dow_trend == "DOWNTREND":
+        score -= 10
+        reasons.append("Dow Theory: structure conflicts with EMA trend (caution)")
+    elif trend == "PUT" and dow_trend == "UPTREND":
+        score -= 10
+        reasons.append("Dow Theory: structure conflicts with EMA trend (caution)")
+
+    score = max(0, score) # Ensure non-negative score
+
+    # 3. RSI Health Filter (15 Points)
     if trend == "CALL":
         if 35 <= rsi <= 65:
             score += 15
             reasons.append(f"RSI Healthy Buy ({rsi})")
         elif rsi < 30:
             score += 15
-            reasons.append(f"RSI Deep Oversold Rebound ({rsi})")
+            reasons.append(f"RSI Oversold Rebound ({rsi})")
 
     elif trend == "PUT":
         if 35 <= rsi <= 65:
@@ -132,9 +191,9 @@ def ai_signal(symbol):
             reasons.append(f"RSI Healthy Sell ({rsi})")
         elif rsi > 70:
             score += 15
-            reasons.append(f"RSI Deep Overbought Drop ({rsi})")
+            reasons.append(f"RSI Overbought Drop ({rsi})")
 
-    # 3. MACD (15 Points)
+    # 4. MACD Confirmation (15 Points)
     if trend == "CALL" and macd > macd_signal:
         score += 15
         reasons.append("MACD Bullish Crossover")
@@ -143,7 +202,7 @@ def ai_signal(symbol):
         score += 15
         reasons.append("MACD Bearish Crossover")
 
-    # 4. Bollinger Bands (15 Points)
+    # 5. Bollinger Bands Bounce / Breakout (15 Points)
     if trend == "CALL" and (close > bb_middle or close <= bb_lower * 1.002):
         score += 15
         reasons.append("Bollinger Support / Bounce")
@@ -152,7 +211,7 @@ def ai_signal(symbol):
         score += 15
         reasons.append("Bollinger Resistance / Rejection")
 
-    # 5. Candlestick Patterns (15 Points)
+    # 6. Candlestick Pattern (15 Points)
     bullish_patterns = ["Bullish Engulfing", "Hammer", "Morning Star", "Pin Bar Bullish"]
     bearish_patterns = ["Bearish Engulfing", "Shooting Star", "Evening Star", "Pin Bar Bearish"]
 
@@ -164,7 +223,7 @@ def ai_signal(symbol):
         score += 15
         reasons.append(f"Pattern: {candle_pattern}")
 
-    # 6. Support / Resistance (10 Points)
+    # 7. Support / Resistance (10 Points)
     if trend == "CALL" and abs(close - support) < (close * 0.0025):
         score += 10
         reasons.append("Near Strong Support")
@@ -172,11 +231,6 @@ def ai_signal(symbol):
     if trend == "PUT" and abs(close - resistance) < (close * 0.0025):
         score += 10
         reasons.append("Near Strong Resistance")
-
-    # 7. Volume (10 Points)
-    if volume > avg_volume:
-        score += 10
-        reasons.append("High Volume Confirmation")
 
     # Final Decision Output
     if score >= 80:
@@ -201,7 +255,7 @@ HTML_TEMPLATE = """
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Quotex AI Intelligence Master v11.3</title>
+<title>Quotex AI Intelligence Master v12.0</title>
 <style>
 *{ margin:0; padding:0; box-sizing:border-box; font-family:'Segoe UI',sans-serif; }
 body{ background:#020617; color:white; max-width:500px; margin:auto; padding-bottom: 40px; }
@@ -227,7 +281,7 @@ body{ background:#020617; color:white; max-width:500px; margin:auto; padding-bot
 #signal{ font-size:26px; font-weight:900; }
 .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; width: 100%; margin-top: 12px; border-top: 1px solid #334155; padding-top: 12px; }
 .stat-item { font-size: 11px; color: #94a3b8; font-weight: bold; text-align: left; }
-.stat-item span { display: block; font-size: 13px; color: #fff; font-weight: 900; margin-top: 3px; }
+.stat-item span { display: block; font-size: 12px; color: #fff; font-weight: 800; margin-top: 3px; }
 .guide-box { width: 100%; margin-top: 12px; padding: 10px; border-radius: 10px; font-size: 11px; font-weight: bold; text-align: center; background: rgba(255, 165, 0, 0.05); border: 1px dashed #ffa500; color: #ffa500; }
 .scanBtn{ width:90%; display:block; margin:15px auto 0 auto; padding:15px; border:none; border-radius:16px; background: linear-gradient(135deg, #00ffcc, #0077ff); font-size:15px; font-weight:bold; color:#000; cursor: pointer; }
 .manual-pnl-actions { display: flex; gap: 10px; width: 100%; margin-top: 12px; }
@@ -247,7 +301,7 @@ body{ background:#020617; color:white; max-width:500px; margin:auto; padding-bot
 </head>
 <body>
 <div class="header">
-<div class="title">🤖 QX ENGINE v11.3 (100 PTS ENGINE)</div>
+<div class="title">🤖 QX ENGINE v12.0 (DOW PENALTY ENGINE)</div>
 <div class="status">🟢 ANTI-BAN INTEGRATION</div>
 </div>
 <div class="clockBox">
@@ -280,11 +334,11 @@ body{ background:#020617; color:white; max-width:500px; margin:auto; padding-bot
 <div class="signalBox signal-neutral" id="displayArea">
 <div id="mainContent" style="width: 100%;">
 <div id="targetAsset" style="font-size: 16px; color: #00ffcc; font-weight: 900; margin-bottom: 5px;">USD/BRL</div>
-<div id="icon">🧠</div>
+<div id="icon">📡</div>
 <div id="signal" style="color:#fff; font-size: 22px;">READY TO MASTER SCAN</div>
 </div>
 </div>
-<button class="scanBtn" onclick="startScan()">🧠 EXECUTE ALGO SCAN</button>
+<button class="scanBtn" onclick="startScan()">🔥 EXECUTE ALGO SCAN</button>
 <div class="control-grid">
     <button class="control-btn" id="autoBtn" onclick="toggleAutoMode()">🔄 AUTO MODE: OFF</button>
     <button class="control-btn" style="background:#dc2626;" onclick="resetStats()">🧹 RESET HISTORY</button>
@@ -336,14 +390,14 @@ function logManualResult(result) {
     displayArea.className = "signalBox signal-neutral";
     mainContent.innerHTML = `
         <div style="font-size: 16px; color: #00ffcc; font-weight: 900; margin-bottom: 5px;">${selectedPair}</div>
-        <div id="icon">🧠</div>
+        <div id="icon">👍</div>
         <div id="signal" style="color:#fff; font-size: 20px;">RESULT LOGGED! READY</div>`;
 }
 
 function startScan(){
     calculateAmounts();
     displayArea.className = "signalBox";
-    mainContent.innerHTML = `<div class="loader"></div><div style="color:#00ffcc;font-weight:bold;">COMPUTING 100-PT WEIGHTED ALGO...</div>`;
+    mainContent.innerHTML = `<div class="loader"></div><div style="color:#00ffcc;font-weight:bold;">ANALYZING DOW STRUCTURE & INDICATORS...</div>`;
     fetch(`/api/get_quotex_signal?pair=${selectedPair}&tf=${selectedTF}`)
     .then(res => res.json())
     .then(data => {
@@ -388,41 +442,4 @@ function toggleAutoMode(){
     } else {
         autoBtn.innerText = "🔄 AUTO MODE: OFF"; autoBtn.classList.remove("active");
         clearInterval(autoInterval);
-    }
-}
-
-function resetStats(){ wins = 0; losses = 0; updateDashboard(); }
-
-document.querySelectorAll('.pair').forEach(item => {
-    item.addEventListener('click', function() {
-        document.querySelector('.pair.active').classList.remove('active');
-        this.classList.add('active'); selectedPair = this.getAttribute('data-name');
-    });
-});
-</script>
-</body>
-</html>
-"""
-
-# ==================== API ROUTE ====================
-
-@app.route('/')
-def home():
-    return render_template_string(HTML_TEMPLATE)
-
-@app.route('/api/get_quotex_signal')
-def get_quotex_signal_api():
-    pair = request.args.get('pair', 'USD/BRL')
-    res = ai_signal(pair)
-    
-    return jsonify({
-        "status": "success",
-        "pair": pair,
-        "signal": res["signal"],
-        "confidence": res["confidence"],
-        "trend": res["trend"],
-        "reasons": res["reasons"]
-    })
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+   
